@@ -9,6 +9,7 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import ta
 import numpy as np
+from urllib.parse import quote
 
 # --- Config ---
 NEWSAPI_KEY = "9d01ca71d0114b77ae22e01d1d230f1f"
@@ -54,8 +55,9 @@ sentiment_analyzer = load_sentiment_model()
 def fetch_news(symbol):
     company_name = get_company_name(symbol)
     query = f'"{company_name}" AND (stock OR share OR NSE)'
+    encoded_query = quote(query)  # Properly URL encode
     url = (f"https://newsapi.org/v2/everything?"
-           f"q={query}&"
+           f"q={encoded_query}&"
            "language=en&"
            f"apiKey={NEWSAPI_KEY}&"
            "sortBy=publishedAt&"
