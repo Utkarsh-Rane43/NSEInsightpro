@@ -18,7 +18,7 @@ PORTFOLIO_FILE = "user_portfolio.json"  # To persist user portfolio data
 # Load stocks list from CSV
 stocks = pd.read_csv("stocks.csv")["symbol"].tolist()
 
-st.title("NSE Stock Advisor: Portfolio & Dividends Included")
+st.title("NSEInsightPRo - NSE Stock Analysis & Portfolio Manager    ")
 
 # Cache company names locally
 def load_cache():
