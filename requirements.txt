@@ -1,0 +1,13 @@
+streamlit
+nsetools
+pandas
+yfinance
+requests
+plotly
+transformers
+torch
+scikit-learn
+matplotlib
+beautifulsoup4
+newspaper3k
+nltk
