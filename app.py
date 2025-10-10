@@ -10,21 +10,44 @@ from plotly.subplots import make_subplots
 import ta
 import numpy as np
 from urllib.parse import quote
-from io import BytesIO  # For Export
+from io import BytesIO
 import base64
+import datetime
 
 # --- Config ---
 NEWSAPI_KEY = "9d01ca71d0114b77ae22e01d1d230f1f"
 CACHE_FILE = "symbol_name_cache.json"
-PORTFOLIO_FILE = "user_portfolio.json"  # To persist user portfolio data
-TRIGGER_FILE = "price_triggers.json"    # To persist trigger notifications
+PORTFOLIO_FILE = "user_portfolio.json"
+TRIGGER_FILE = "price_triggers.json"
 
-# Load stocks list from CSV
 stocks = pd.read_csv("stocks.csv")["symbol"].tolist()
 
-st.title("NSEInsightPRo - NSE Stock Analysis & Portfolio Manager    ")
+st.title("NSEInsightPRo - NSE Stock Analysis & Portfolio Manager")
 
-# --- NEW: Price Trigger Feature ---
+def load_cache():
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_cache(cache):
+    with open(CACHE_FILE, "w") as f:
+        json.dump(cache, f)
+
+def get_company_name(symbol):
+    cache = load_cache()
+    if symbol in cache:
+        return cache[symbol]
+    try:
+        ticker = yf.Ticker(symbol + ".NS")
+        info = ticker.info
+        name = info.get("longName") or info.get("shortName") or symbol
+        cache[symbol] = name
+        save_cache(cache)
+        return name
+    except Exception:
+        return symbol
+
 def load_triggers():
     if os.path.exists(TRIGGER_FILE):
         with open(TRIGGER_FILE, "r") as f:
@@ -56,42 +79,15 @@ def trigger_inputs(stock):
         save_triggers(triggers)
         st.sidebar.success("Triggers updated.")
 
-# --- Remaining Existing Logic unchanged ---
-
-def load_cache():
-    if os.path.exists(CACHE_FILE):
-        with open(CACHE_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_cache(cache):
-    with open(CACHE_FILE, "w") as f:
-        json.dump(cache, f)
-
-def get_company_name(symbol):
-    cache = load_cache()
-    if symbol in cache:
-        return cache[symbol]
-    try:
-        ticker = yf.Ticker(symbol + ".NS")
-        info = ticker.info
-        name = info.get("longName") or info.get("shortName") or symbol
-        cache[symbol] = name
-        save_cache(cache)
-        return name
-    except Exception:
-        return symbol
-
 @st.cache_resource(show_spinner=False)
 def load_sentiment_model():
     return pipeline("sentiment-analysis", model="yiyanghkust/finbert-tone")
-
 sentiment_analyzer = load_sentiment_model()
 
 def fetch_news(symbol):
     company_name = get_company_name(symbol)
     query = f'"{company_name}" AND (stock OR share OR NSE)'
-    encoded_query = quote(query)  # Properly URL encode
+    encoded_query = quote(query)
     url = (f"https://newsapi.org/v2/everything?"
            f"q={encoded_query}&"
            "language=en&"
@@ -117,11 +113,14 @@ def fetch_earnings_and_dividends(symbol):
     except Exception:
         return None, None
 
-def safe_yf_ticker(symbol):
+def safe_yf_ticker(symbol, period="1y", interval="1d", start=None, end=None):
     ticker = yf.Ticker(symbol + ".NS")
     try:
+        if start and end:
+            hist = ticker.history(start=start, end=end, interval=interval)
+        else:
+            hist = ticker.history(period=period, interval=interval)
         info = ticker.info
-        hist = ticker.history(period="1y", interval="1d")
         if hist.empty or info is None:
             st.warning("No data found for this stock. Try another.")
             return {}, pd.DataFrame()
@@ -130,7 +129,14 @@ def safe_yf_ticker(symbol):
         st.error(f"Error fetching stock data: {e}")
         return {}, pd.DataFrame()
 
-# User Portfolio management
+def get_latest_price(stock):
+    ticker = yf.Ticker(stock + ".NS")
+    try:
+        price = ticker.history(period="1d")['Close'][0]
+        return price
+    except:
+        return None
+
 def load_portfolio():
     if os.path.exists(PORTFOLIO_FILE):
         with open(PORTFOLIO_FILE, "r") as f:
@@ -146,7 +152,6 @@ def display_portfolio(portfolio):
     if not portfolio:
         st.info("Your portfolio is empty. Add stocks below.")
         return
-    portfolio_items = []
     total_value = 0
     total_invested = 0
     st.write("| Stock | Qty | Avg Buy Price (₹) | Current Price (₹) | Market Value (₹) | P/L (₹) |")
@@ -170,7 +175,6 @@ def display_portfolio(portfolio):
     st.markdown(f"**Total Invested:** ₹{total_invested:.2f}")
     st.markdown(f"**Total P/L:** ₹{(total_value - total_invested):.2f}")
 
-# Add stock to portfolio UI
 def portfolio_management_ui():
     st.header("Manage Your Portfolio")
     portfolio = load_portfolio()
@@ -179,21 +183,16 @@ def portfolio_management_ui():
         qty = st.number_input("Quantity", min_value=1, value=1)
         avg_price = st.number_input("Average Buy Price (₹)", format="%.2f", min_value=0.01)
         submitted = st.form_submit_button("Add / Update Stock")
-
     if submitted:
         if add_symbol in portfolio:
-            # Update avg price weighted by existing qty & new qty
             total_qty = portfolio[add_symbol]['quantity'] + qty
             total_cost = (portfolio[add_symbol]['avg_price']*portfolio[add_symbol]['quantity']) + (avg_price*qty)
             portfolio[add_symbol]['quantity'] = total_qty
             portfolio[add_symbol]['avg_price'] = total_cost / total_qty
         else:
             portfolio[add_symbol] = {"quantity": qty, "avg_price": avg_price}
-
         save_portfolio(portfolio)
         st.success(f"{add_symbol} added/updated in portfolio!")
-
-    # Optionally remove stocks
     if portfolio:
         st.subheader("Remove Stock From Portfolio")
         to_remove = st.selectbox("Select Stock to Remove", list(portfolio.keys()))
@@ -201,21 +200,15 @@ def portfolio_management_ui():
             portfolio.pop(to_remove, None)
             save_portfolio(portfolio)
             st.success(f"{to_remove} removed from portfolio!")
-
     display_portfolio(portfolio)
 
-# --- NEW: Export Analysis to CSV/PDF ---
 def export_analysis_to_csv(info, hist, stock, company_name, portfolio):
-    # Basic CSV export: info, last 5 data points, and portfolio summary
     buffer = BytesIO()
-    # Stock info
     info_df = pd.DataFrame([info])
     info_df.to_csv(buffer, index=False)
     buffer.write('\n'.encode())
-    # Historical data (last 5 rows)
     hist.tail(5).to_csv(buffer)
     buffer.write('\n'.encode())
-    # Portfolio data
     port_df = pd.DataFrame([{**v, "symbol": k} for k, v in portfolio.items()])
     port_df.to_csv(buffer, index=False)
     buffer.seek(0)
@@ -237,7 +230,6 @@ def export_analysis_to_pdf(info, hist, stock, company_name, portfolio):
     pdf.cell(0, 10, "Portfolio Summary", ln=1)
     for sym, v in portfolio.items():
         pdf.cell(0, 10, f"{sym}: {v}", ln=1)
-    # Save and offer for download
     buffer = BytesIO()
     pdf.output(buffer)
     buffer.seek(0)
@@ -245,22 +237,38 @@ def export_analysis_to_pdf(info, hist, stock, company_name, portfolio):
     href = f'<a href="data:application/pdf;base64,{b64}" download="analysis_{stock}.pdf">Download Analysis as PDF</a>'
     st.markdown(href, unsafe_allow_html=True)
 
-# UI Main
+# Date Range for analysis sidebar
+st.sidebar.header("Analysis Date Range")
+default_start = (datetime.date.today() - datetime.timedelta(days=365))
+start_date = st.sidebar.date_input('Start Date', default_start)
+end_date = st.sidebar.date_input('End Date', datetime.date.today())
+
 stock = st.selectbox("Select a Stock for Analysis", stocks)
 
 if stock:
-    trigger_inputs(stock)  # --- NEW: Trigger input sidebar
-    info, hist = safe_yf_ticker(stock)
-
+    trigger_inputs(stock)
+    info, hist = safe_yf_ticker(stock, start=pd.Timestamp(start_date), end=pd.Timestamp(end_date + datetime.timedelta(days=1)))
     if info and not hist.empty:
         company_name = get_company_name(stock)
         st.subheader(f"{stock} - {company_name}")
 
-        # NEW: Check triggers on price
-        price = float(info.get('currentPrice', 'nan'))
-        check_trigger(stock, price)
+        # --- Refresh Latest Price button ---
+        refresh = st.button("Refresh Latest Price")
+        if refresh:
+            price = get_latest_price(stock)
+            st.success(f"Latest price: ₹{price:.2f}" if price is not None else "Price unavailable.")
+            check_trigger(stock, price)
+        else:
+            price = float(info.get('currentPrice', 'nan'))
+            check_trigger(stock, price)
 
-        # Price & KPIs
+        wk52_high = info.get('fiftyTwoWeekHigh', None)
+        wk52_low = info.get('fiftyTwoWeekLow', None)
+        if wk52_high and wk52_low and not pd.isna(wk52_high) and not pd.isna(wk52_low):
+            pct = 100 * (price - wk52_low) / (wk52_high - wk52_low)
+            st.progress(float(pct) / 100)
+            st.caption(f"52-Week Range: ₹{wk52_low:.2f} – ₹{wk52_high:.2f} (Current: ₹{price:.2f})")
+
         col1, col2, col3 = st.columns(3)
         try:
             prev_close = float(info.get('previousClose', 'nan'))
@@ -272,7 +280,6 @@ if stock:
         col2.metric("Day High (₹)", info.get('dayHigh', '-'))
         col3.metric("Day Low (₹)", info.get('dayLow', '-'))
 
-        # Fundamentals
         mcap = info.get('marketCap', None)
         pe = info.get('trailingPE', None)
         div_yield = info.get('dividendYield', None)
@@ -290,16 +297,17 @@ if stock:
         except Exception:
             st.warning("Not enough data for buy/sell recommendations.")
 
-        # Moving averages & RSI
         hist["MA20"] = hist["Close"].rolling(window=20).mean()
         hist["MA50"] = hist["Close"].rolling(window=50).mean()
         hist["MA200"] = hist["Close"].rolling(window=200).mean()
         hist["RSI"] = ta.momentum.rsi(hist["Close"], window=14)
+        bb = ta.volatility.BollingerBands(hist['Close'], window=20)
+        hist["BB_High"] = bb.bollinger_hband()
+        hist["BB_Low"]  = bb.bollinger_lband()
 
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
                             vertical_spacing=0.1,
-                            subplot_titles=["Price with Moving Averages (Candlestick)", "Volume", "RSI (14-day)"])
-
+                            subplot_titles=["Price with MAs & Bollinger Bands", "Volume", "RSI (14-day)"])
         fig.add_trace(go.Candlestick(x=hist.index,
                                      open=hist['Open'], high=hist['High'],
                                      low=hist['Low'], close=hist['Close'],
@@ -307,15 +315,15 @@ if stock:
         fig.add_trace(go.Scatter(x=hist.index, y=hist['MA20'], line=dict(color='blue', width=1), name='MA 20'), row=1, col=1)
         fig.add_trace(go.Scatter(x=hist.index, y=hist['MA50'], line=dict(color='orange', width=1), name='MA 50'), row=1, col=1)
         fig.add_trace(go.Scatter(x=hist.index, y=hist['MA200'], line=dict(color='green', width=1), name='MA 200'), row=1, col=1)
-
+        fig.add_trace(go.Scatter(x=hist.index, y=hist["BB_High"], line=dict(color='gray', width=1, dash='dash'),
+                                 name='Bollinger High'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=hist.index, y=hist["BB_Low"], line=dict(color='gray', width=1, dash='dash'),
+                                 name='Bollinger Low'), row=1, col=1)
         fig.add_trace(go.Bar(x=hist.index, y=hist['Volume'], marker_color='lightblue', name='Volume'), row=2, col=1)
-
         fig.add_trace(go.Scatter(x=hist.index, y=hist['RSI'], line=dict(color='purple', width=1), name='RSI'), row=3, col=1)
-
         fig.update_layout(height=900, showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
 
-        # Price gauge
         gauge = go.Figure(go.Indicator(
             mode="gauge+number+delta",
             value=price,
@@ -324,7 +332,6 @@ if stock:
             title={'text': f"{stock} Price Gauge"}))
         st.plotly_chart(gauge)
 
-        # Earnings & dividends calendar
         earnings_cal, dividend_data = fetch_earnings_and_dividends(stock)
         st.header("Earnings / Events Calendar")
         if earnings_cal is not None and not earnings_cal.empty:
@@ -337,16 +344,13 @@ if stock:
             dividend_df = pd.DataFrame(dividend_data)
             dividend_df.reset_index(inplace=True)
             dividend_df = dividend_df.rename(columns={"Dividends":"Dividend"})
-            # Show next 5 dividends
             st.table(dividend_df.tail(5)[['Date', 'Dividend']])
         else:
             st.info("No upcoming dividend data found.")
 
-        # News + Sentiment
         st.header(f"{stock} News & Sentiment")
         news_articles = fetch_news(stock)
         pos_count = neg_count = neu_count = 0
-
         if news_articles:
             for title, url in news_articles:
                 sentiment = sentiment_analyzer(title)[0]
@@ -354,23 +358,18 @@ if stock:
                 score = sentiment["score"]
                 color = "green" if label == "positive" else "red" if label == "negative" else "gray"
                 st.markdown(f"- [{title}]({url}) — <span style='color:{color}'>{label.capitalize()} ({score:.2f})</span>", unsafe_allow_html=True)
-
                 if label == "positive":
                     pos_count += 1
                 elif label == "negative":
                     neg_count += 1
                 else:
                     neu_count += 1
-
-            # Sentiment pie chart
             labels = ["Positive", "Negative", "Neutral"]
             values = [pos_count, neg_count, neu_count]
             pie_fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4,
                                              marker_colors=["green", "red", "gray"])])
             pie_fig.update_layout(title="News Sentiment Distribution")
             st.plotly_chart(pie_fig)
-
-            # Recommendation logic
             if pos_count > neg_count and price >= prev_close:
                 rec = "BUY"
             elif neg_count > pos_count and price < prev_close:
@@ -381,7 +380,6 @@ if stock:
         else:
             st.info("No recent news found.")
 
-        # --- NEW: Export to CSV/PDF ---
         st.markdown("---")
         st.subheader("Export Analysis")
         portfolio_data = load_portfolio()
@@ -389,9 +387,7 @@ if stock:
             export_analysis_to_csv(info, hist, stock, company_name, portfolio_data)
         if st.button("Export as PDF"):
             export_analysis_to_pdf(info, hist, stock, company_name, portfolio_data)
-
     else:
         st.warning("No price data found for this stock.")
 
-# User portfolio management section
 portfolio_management_ui()
