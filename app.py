@@ -12,6 +12,9 @@ import ta
 import numpy as np
 from urllib.parse import quote
 
+
+stock = ""
+
 # --- Added Feature ---
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -117,7 +120,7 @@ def price_trigger_section():
 
 
 # --- MAIN EXECUTION ---
-if symbol:
+if stock:
     info, hist = safe_yf_ticker(stock)
 
     if info and not hist.empty:
