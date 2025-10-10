@@ -117,7 +117,7 @@ def price_trigger_section():
 
 
 # --- MAIN EXECUTION ---
-if stock:
+if symbol:
     info, hist = safe_yf_ticker(stock)
 
     if info and not hist.empty:
