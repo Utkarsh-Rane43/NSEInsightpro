@@ -84,7 +84,7 @@ if stock:
         info, hist = {}, pd.DataFrame()
 
     if info and not hist.empty:
-        
+        company_name = get_company_name(stock)
         st.subheader(f"{stock} - {company_name}")
 
         # Existing: Price & KPIs
