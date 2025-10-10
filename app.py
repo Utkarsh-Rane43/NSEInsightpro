@@ -32,6 +32,19 @@ st.title("NSEInsightPRo - NSE Stock Analysis & Portfolio Manager")
 # ... (keep your full existing code unchanged above) ...
 
 
+# --- Portfolio functions ---
+def load_portfolio():
+    if os.path.exists(PORTFOLIO_FILE):
+        with open(PORTFOLIO_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_portfolio(portfolio):
+    with open(PORTFOLIO_FILE, "w") as f:
+        json.dump(portfolio, f)
+
+
+
 # --- EXISTING portfolio_management_ui FUNCTION ---
 def portfolio_management_ui():
     st.header("Manage Your Portfolio")
