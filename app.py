@@ -65,7 +65,19 @@ end_date = st.sidebar.date_input('End Date', datetime.date.today())
 
 stock = st.selectbox("Select a Stock for Analysis", stocks)
 def get_company_name(symbol):
-    company_name = get_company_name(stock)
+    cache = load_cache()
+    if symbol in cache:
+        return cache[symbol]
+    try:
+        ticker = yf.Ticker(symbol + ".NS")
+        info = ticker.info
+        name = info.get("longName") or info.get("shortName") or symbol
+        cache[symbol] = name
+        save_cache(cache)
+        return name
+    except Exception:
+        return symbol
+
 if stock:
     trigger_inputs(stock)  # --- Existing feature
     # Updated: pass selected date range to yfinance
@@ -84,7 +96,6 @@ if stock:
         info, hist = {}, pd.DataFrame()
 
     if info and not hist.empty:
-        company_name = get_company_name(stock)
         st.subheader(f"{stock} - {company_name}")
 
         # Existing: Price & KPIs
