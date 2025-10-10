@@ -64,7 +64,8 @@ start_date = st.sidebar.date_input('Start Date', default_start)
 end_date = st.sidebar.date_input('End Date', datetime.date.today())
 
 stock = st.selectbox("Select a Stock for Analysis", stocks)
-
+def get_company_name(symbol):
+    company_name = get_company_name(stock)
 if stock:
     trigger_inputs(stock)  # --- Existing feature
     # Updated: pass selected date range to yfinance
@@ -83,7 +84,7 @@ if stock:
         info, hist = {}, pd.DataFrame()
 
     if info and not hist.empty:
-        company_name = get_company_name(stock)
+        
         st.subheader(f"{stock} - {company_name}")
 
         # Existing: Price & KPIs
