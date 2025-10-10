@@ -10,18 +10,54 @@ from plotly.subplots import make_subplots
 import ta
 import numpy as np
 from urllib.parse import quote
+from io import BytesIO  # For Export
+import base64
 
 # --- Config ---
 NEWSAPI_KEY = "9d01ca71d0114b77ae22e01d1d230f1f"
 CACHE_FILE = "symbol_name_cache.json"
 PORTFOLIO_FILE = "user_portfolio.json"  # To persist user portfolio data
+TRIGGER_FILE = "price_triggers.json"    # To persist trigger notifications
 
 # Load stocks list from CSV
 stocks = pd.read_csv("stocks.csv")["symbol"].tolist()
 
 st.title("NSEInsightPRo - NSE Stock Analysis & Portfolio Manager    ")
 
-# Cache company names locally
+# --- NEW: Price Trigger Feature ---
+def load_triggers():
+    if os.path.exists(TRIGGER_FILE):
+        with open(TRIGGER_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_triggers(triggers):
+    with open(TRIGGER_FILE, "w") as f:
+        json.dump(triggers, f)
+
+def check_trigger(stock, current_price):
+    triggers = load_triggers()
+    trig = triggers.get(stock)
+    if trig:
+        above = trig.get("above")
+        below = trig.get("below")
+        if above and current_price > above:
+            st.warning(f"{stock} moved **above** ₹{above:.2f} (Current: ₹{current_price:.2f})")
+        if below and current_price < below:
+            st.warning(f"{stock} moved **below** ₹{below:.2f} (Current: ₹{current_price:.2f})")
+
+def trigger_inputs(stock):
+    st.sidebar.header("Price Trigger Alerts")
+    triggers = load_triggers()
+    above_value = st.sidebar.number_input(f"Notify if {stock} goes **above**", min_value=0.0, value=triggers.get(stock, {}).get("above", 0.0), format="%.2f")
+    below_value = st.sidebar.number_input(f"Notify if {stock} goes **below**", min_value=0.0, value=triggers.get(stock, {}).get("below", 0.0), format="%.2f")
+    if st.sidebar.button("Set Price Triggers"):
+        triggers[stock] = {"above": above_value if above_value > 0 else None, "below": below_value if below_value > 0 else None}
+        save_triggers(triggers)
+        st.sidebar.success("Triggers updated.")
+
+# --- Remaining Existing Logic unchanged ---
+
 def load_cache():
     if os.path.exists(CACHE_FILE):
         with open(CACHE_FILE, "r") as f:
@@ -168,20 +204,65 @@ def portfolio_management_ui():
 
     display_portfolio(portfolio)
 
+# --- NEW: Export Analysis to CSV/PDF ---
+def export_analysis_to_csv(info, hist, stock, company_name, portfolio):
+    # Basic CSV export: info, last 5 data points, and portfolio summary
+    buffer = BytesIO()
+    # Stock info
+    info_df = pd.DataFrame([info])
+    info_df.to_csv(buffer, index=False)
+    buffer.write('\n'.encode())
+    # Historical data (last 5 rows)
+    hist.tail(5).to_csv(buffer)
+    buffer.write('\n'.encode())
+    # Portfolio data
+    port_df = pd.DataFrame([{**v, "symbol": k} for k, v in portfolio.items()])
+    port_df.to_csv(buffer, index=False)
+    buffer.seek(0)
+    b64 = base64.b64encode(buffer.read()).decode()
+    href = f'<a href="data:file/csv;base64,{b64}" download="analysis_{stock}.csv">Download Analysis as CSV</a>'
+    st.markdown(href, unsafe_allow_html=True)
+
+def export_analysis_to_pdf(info, hist, stock, company_name, portfolio):
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        st.error("Install fpdf to enable PDF export.")
+        return
+    pdf = FPDF()
+    pdf.add_page("P")
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, f'{stock} Analysis - {company_name}', ln=1)
+    pdf.multi_cell(0, 10, str(info))
+    pdf.cell(0, 10, "Portfolio Summary", ln=1)
+    for sym, v in portfolio.items():
+        pdf.cell(0, 10, f"{sym}: {v}", ln=1)
+    # Save and offer for download
+    buffer = BytesIO()
+    pdf.output(buffer)
+    buffer.seek(0)
+    b64 = base64.b64encode(buffer.read()).decode()
+    href = f'<a href="data:application/pdf;base64,{b64}" download="analysis_{stock}.pdf">Download Analysis as PDF</a>'
+    st.markdown(href, unsafe_allow_html=True)
+
 # UI Main
 stock = st.selectbox("Select a Stock for Analysis", stocks)
 
 if stock:
+    trigger_inputs(stock)  # --- NEW: Trigger input sidebar
     info, hist = safe_yf_ticker(stock)
 
     if info and not hist.empty:
         company_name = get_company_name(stock)
         st.subheader(f"{stock} - {company_name}")
 
+        # NEW: Check triggers on price
+        price = float(info.get('currentPrice', 'nan'))
+        check_trigger(stock, price)
+
         # Price & KPIs
         col1, col2, col3 = st.columns(3)
         try:
-            price = float(info.get('currentPrice', 'nan'))
             prev_close = float(info.get('previousClose', 'nan'))
             price_change = price - prev_close
             price_change_pct = (price_change / prev_close) * 100
@@ -299,6 +380,15 @@ if stock:
             st.subheader(f"Overall Recommendation: {rec}")
         else:
             st.info("No recent news found.")
+
+        # --- NEW: Export to CSV/PDF ---
+        st.markdown("---")
+        st.subheader("Export Analysis")
+        portfolio_data = load_portfolio()
+        if st.button("Export as CSV"):
+            export_analysis_to_csv(info, hist, stock, company_name, portfolio_data)
+        if st.button("Export as PDF"):
+            export_analysis_to_pdf(info, hist, stock, company_name, portfolio_data)
 
     else:
         st.warning("No price data found for this stock.")
