@@ -12,3 +12,4 @@ beautifulsoup4
 newspaper3k
 nltk
 ta
+reportlab
