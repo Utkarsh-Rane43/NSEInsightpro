@@ -14,6 +14,7 @@ from io import BytesIO  # For Export
 import base64
 import io
 from fpdf import FPDF
+import datetime
 # --- Config ---
 NEWSAPI_KEY = "9d01ca71d0114b77ae22e01d1d230f1f"
 CACHE_FILE = "symbol_name_cache.json"
@@ -56,6 +57,94 @@ def trigger_inputs(stock):
         triggers[stock] = {"above": above_value if above_value > 0 else None, "below": below_value if below_value > 0 else None}
         save_triggers(triggers)
         st.sidebar.success("Triggers updated.")
+
+st.sidebar.header("Analysis Date Range")
+default_start = (datetime.date.today() - datetime.timedelta(days=365))
+start_date = st.sidebar.date_input('Start Date', default_start)
+end_date = st.sidebar.date_input('End Date', datetime.date.today())
+
+stock = st.selectbox("Select a Stock for Analysis", stocks)
+
+if stock:
+    trigger_inputs(stock)  # --- Existing feature
+    # Updated: pass selected date range to yfinance
+    ticker = yf.Ticker(stock + ".NS")
+    try:
+        info = ticker.info
+        hist = ticker.history(
+            start=pd.Timestamp(start_date),
+            end=pd.Timestamp(end_date + datetime.timedelta(days=1)),
+            interval="1d")
+        if hist.empty or info is None:
+            st.warning("No data found for this stock. Try another.")
+            info, hist = {}, pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error fetching stock data: {e}")
+        info, hist = {}, pd.DataFrame()
+
+    if info and not hist.empty:
+        company_name = get_company_name(stock)
+        st.subheader(f"{stock} - {company_name}")
+
+        # Existing: Price & KPIs
+        price = float(info.get('currentPrice', 'nan'))
+        check_trigger(stock, price)
+
+        # Existing: KPIs
+        prev_close = float(info.get('previousClose', 'nan'))
+        price_change = price - prev_close
+        price_change_pct = (price_change / prev_close) * 100
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Current Price (₹)", f"{price:.2f}", f"{price_change:.2f} ({price_change_pct:.2f}%)")
+        col2.metric("Day High (₹)", info.get('dayHigh', '-'))
+        col3.metric("Day Low (₹)", info.get('dayLow', '-'))
+
+        # [52-week Range Visualization - EASY ADDITION]
+        wk52_high = info.get('fiftyTwoWeekHigh', None)
+        wk52_low = info.get('fiftyTwoWeekLow', None)
+        if wk52_high and wk52_low and not pd.isna(wk52_high) and not pd.isna(wk52_low):
+            pct = 100 * (price - wk52_low) / (wk52_high - wk52_low)
+            st.progress(float(pct) / 100)
+            st.caption(f"52-Week Range: ₹{wk52_low:.2f} – ₹{wk52_high:.2f} (Current: ₹{price:.2f})")
+        # If not available, this block is skipped.
+
+        # Fundamentals (unchanged)
+        # ... same as before ...
+
+        # Existing: Technicals
+        hist["MA20"] = hist["Close"].rolling(window=20).mean()
+        hist["MA50"] = hist["Close"].rolling(window=50).mean()
+        hist["MA200"] = hist["Close"].rolling(window=200).mean()
+        hist["RSI"] = ta.momentum.rsi(hist["Close"], window=14)
+        # [Bollinger Bands - EASY ADDITION]
+        bb = ta.volatility.BollingerBands(hist['Close'], window=20)
+        hist["BB_High"] = bb.bollinger_hband()
+        hist["BB_Low"]  = bb.bollinger_lband()
+
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                            vertical_spacing=0.1,
+                            subplot_titles=["Price with Moving Averages (Candlestick)", "Volume", "RSI (14-day)"])
+
+        fig.add_trace(go.Candlestick(x=hist.index,
+                                     open=hist['Open'], high=hist['High'],
+                                     low=hist['Low'], close=hist['Close'],
+                                     name="OHLC"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=hist.index, y=hist['MA20'], line=dict(color='blue', width=1), name='MA 20'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=hist.index, y=hist['MA50'], line=dict(color='orange', width=1), name='MA 50'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=hist.index, y=hist['MA200'], line=dict(color='green', width=1), name='MA 200'), row=1, col=1)
+        # Bollinger Bands Overlay
+        fig.add_trace(go.Scatter(x=hist.index, y=hist["BB_High"], line=dict(color='gray', width=1, dash='dash'), 
+                                 name='Bollinger High'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=hist.index, y=hist["BB_Low"], line=dict(color='gray', width=1, dash='dash'), 
+                                 name='Bollinger Low'), row=1, col=1)
+
+        fig.add_trace(go.Bar(x=hist.index, y=hist['Volume'], marker_color='lightblue', name='Volume'), row=2, col=1)
+        fig.add_trace(go.Scatter(x=hist.index, y=hist['RSI'], line=dict(color='purple', width=1), name='RSI'), row=3, col=1)
+        fig.update_layout(height=900, showlegend=True)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ... [rest of your analysis code remains unchanged] ...
+
 
 # --- Remaining Existing Logic unchanged ---
 
