@@ -13,3 +13,4 @@ newspaper3k
 nltk
 ta
 reportlab
+fpdf
