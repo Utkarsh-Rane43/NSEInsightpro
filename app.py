@@ -12,7 +12,8 @@ import numpy as np
 from urllib.parse import quote
 from io import BytesIO  # For Export
 import base64
-
+import io
+from fpdf import FPDF
 # --- Config ---
 NEWSAPI_KEY = "9d01ca71d0114b77ae22e01d1d230f1f"
 CACHE_FILE = "symbol_name_cache.json"
@@ -223,28 +224,24 @@ def export_analysis_to_csv(info, hist, stock, company_name, portfolio):
     href = f'<a href="data:file/csv;base64,{b64}" download="analysis_{stock}.csv">Download Analysis as CSV</a>'
     st.markdown(href, unsafe_allow_html=True)
 
-def export_analysis_to_pdf(info, hist, stock, company_name, portfolio):
-    try:
-        from fpdf import FPDF
-    except ImportError:
-        st.error("Install fpdf to enable PDF export.")
-        return
+def export_analysis_to_pdf(info, hist, stock, company_name, portfolio_data):
     pdf = FPDF()
-    pdf.add_page("P")
-    pdf.set_font("Arial", size=12)
-    pdf.cell(0, 10, f'{stock} Analysis - {company_name}', ln=1)
-    pdf.multi_cell(0, 10, str(info))
-    pdf.cell(0, 10, "Portfolio Summary", ln=1)
-    for sym, v in portfolio.items():
-        pdf.cell(0, 10, f"{sym}: {v}", ln=1)
-    # Save and offer for download
-    buffer = BytesIO()
-    pdf.output(buffer)
-    buffer.seek(0)
-    b64 = base64.b64encode(buffer.read()).decode()
-    href = f'<a href="data:application/pdf;base64,{b64}" download="analysis_{stock}.pdf">Download Analysis as PDF</a>'
-    st.markdown(href, unsafe_allow_html=True)
-
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, f"{stock} - {company_name} Analysis", ln=True)
+    
+    # Example: add some portfolio data
+    pdf.set_font("Arial", "", 12)
+    for sym, data in portfolio_data.items():
+        pdf.cell(0, 8, f"{sym}: Qty={data['quantity']}, Avg Price={data['avg_price']}", ln=True)
+    
+    # Save PDF to file
+    pdf_path = f"{stock}_analysis.pdf"
+    pdf.output(pdf_path)  # ✅ must provide filename string
+    
+    # Provide download button
+    with open(pdf_path, "rb") as f:
+        st.download_button("Download PDF", f, file_name=pdf_path)
 # UI Main
 stock = st.selectbox("Select a Stock for Analysis", stocks)
 
