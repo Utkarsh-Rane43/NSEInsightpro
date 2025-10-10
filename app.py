@@ -43,6 +43,32 @@ def save_portfolio(portfolio):
     with open(PORTFOLIO_FILE, "w") as f:
         json.dump(portfolio, f)
 
+def display_portfolio(portfolio):
+    st.header("Your Portfolio Summary")
+    if not portfolio:
+        st.info("Your portfolio is empty. Add stocks below.")
+        return
+    st.write("| Stock | Qty | Avg Buy Price (₹) | Current Price (₹) | Market Value (₹) | P/L (₹) |")
+    st.write("|-------|-----|-------------------|-------------------|-----------------|---------|")
+    total_value = total_invested = 0
+    for sym, data in portfolio.items():
+        qty = data['quantity']
+        avg_price = data['avg_price']
+        try:
+            ticker = yf.Ticker(sym + ".NS")
+            current_price = ticker.history(period="1d")['Close'][0]
+            market_value = current_price * qty
+            invested = avg_price * qty
+            pl = market_value - invested
+            pl_color = "green" if pl >= 0 else "red"
+            st.write(f"| {sym} | {qty} | {avg_price:.2f} | {current_price:.2f} | {market_value:.2f} | <span style='color:{pl_color}'>{pl:.2f}</span> |", unsafe_allow_html=True)
+            total_value += market_value
+            total_invested += invested
+        except:
+            st.write(f"| {sym} | {qty} | {avg_price:.2f} | N/A | N/A | N/A |")
+    st.markdown(f"**Total Market Value:** ₹{total_value:.2f}")
+    st.markdown(f"**Total Invested:** ₹{total_invested:.2f}")
+    st.markdown(f"**Total P/L:** ₹{(total_value - total_invested):.2f}")
 
 
 # --- EXISTING portfolio_management_ui FUNCTION ---
