@@ -217,26 +217,27 @@ def export_analysis_to_csv(info, hist, stock, company_name, portfolio):
     href = f'<a href="data:file/csv;base64,{b64}" download="analysis_{stock}.csv">Download Analysis as CSV</a>'
     st.markdown(href, unsafe_allow_html=True)
 
-def export_analysis_to_pdf(info, hist, stock, company_name, portfolio):
-    try:
-        from fpdf import FPDF
-    except ImportError:
-        st.error("Install fpdf to enable PDF export.")
-        return
+def export_analysis_to_pdf(info, hist, stock, company_name, portfolio_data):
     pdf = FPDF()
-    pdf.add_page("P")
+    pdf.add_page()
     pdf.set_font("Arial", size=12)
-    pdf.cell(0, 10, f'{stock} Analysis - {company_name}', ln=1)
-    pdf.multi_cell(0, 10, str(info))
-    pdf.cell(0, 10, "Portfolio Summary", ln=1)
-    for sym, v in portfolio.items():
-        pdf.cell(0, 10, f"{sym}: {v}", ln=1)
-    buffer = BytesIO()
-    pdf.output(buffer)
-    buffer.seek(0)
-    b64 = base64.b64encode(buffer.read()).decode()
-    href = f'<a href="data:application/pdf;base64,{b64}" download="analysis_{stock}.pdf">Download Analysis as PDF</a>'
-    st.markdown(href, unsafe_allow_html=True)
+    pdf.cell(200, 10, txt=f"Stock Analysis Report: {company_name}", ln=True, align="C")
+
+    # Example content
+    pdf.cell(200, 10, txt=f"Stock: {stock}", ln=True)
+    pdf.cell(200, 10, txt=f"Info: {info}", ln=True)
+
+    # ✅ Generate PDF in-memory
+    pdf_output = pdf.output(dest='S').encode('latin1')  # dest='S' returns PDF as string
+
+    # ✅ Convert to BytesIO for Streamlit download
+    buffer = io.BytesIO(pdf_output)
+    st.download_button(
+        label="📄 Download PDF Report",
+        data=buffer,
+        file_name=f"{company_name}_report.pdf",
+        mime="application/pdf"
+    )
 
 # Date Range for analysis sidebar
 st.sidebar.header("Analysis Date Range")
