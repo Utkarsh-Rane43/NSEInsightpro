@@ -15,7 +15,7 @@ import base64
 import datetime
 
 # --- Config ---
-NEWSAPI_KEY = "9d01ca71d0114b77ae22e01d1d230f1f"
+NEWSAPI_KEY = "b48882c63ce94c75af1ddbe409c1dcf5"
 CACHE_FILE = "symbol_name_cache.json"
 PORTFOLIO_FILE = "user_portfolio.json"
 TRIGGER_FILE = "price_triggers.json"
