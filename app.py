@@ -14,7 +14,7 @@ from io import BytesIO
 import base64
 import datetime
 from fpdf import FPDF
-
+import io
 # --- Config ---
 NEWSAPI_KEY = "b48882c63ce94c75af1ddbe409c1dcf5"
 CACHE_FILE = "symbol_name_cache.json"
