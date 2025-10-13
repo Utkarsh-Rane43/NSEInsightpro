@@ -13,6 +13,7 @@ from urllib.parse import quote
 from io import BytesIO
 import base64
 import datetime
+from fpdf import FPDF
 
 # --- Config ---
 NEWSAPI_KEY = "b48882c63ce94c75af1ddbe409c1dcf5"
