@@ -30,7 +30,7 @@ MODEL_CACHE = "ml_models_cache.json"
 stocks = pd.read_csv("stocks.csv")["symbol"].tolist()
 
 st.set_page_config(page_title="NSEInsightPro", layout="wide")
-st.title("🚀 NSEInsightPro - Advanced NSE Stock Analysis & Portfolio Manager")
+st.title("NSEInsightPro - Advanced NSE Stock Analysis & Portfolio Manager")
 
 # --- Utility Functions ---
 def load_cache():
