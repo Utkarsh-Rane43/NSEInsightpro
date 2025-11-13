@@ -155,9 +155,18 @@ def safe_yf_ticker(symbol, period="1y", interval="1d", start=None, end=None):
 def get_latest_price(stock):
     ticker = yf.Ticker(stock + ".NS")
     try:
-        price = ticker.history(period="1d")['Close'].iloc[-1]
-        return price
-    except:
+        # Try fetching latest minute data
+        data = ticker.history(period="1d", interval="1m")
+        if not data.empty:
+            latest_price = data['Close'].iloc[-1]
+            return round(latest_price, 2)
+        
+        # fallback: daily close
+        data = ticker.history(period="1d")
+        if not data.empty:
+            return round(data['Close'].iloc[-1], 2)
+    except Exception as e:
+        st.error(f"Error fetching latest price for {stock}: {e}")
         return None
 
 def load_portfolio():
